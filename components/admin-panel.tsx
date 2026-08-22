@@ -623,8 +623,8 @@ function HeroEditor({
         <h3 className="text-base font-bold text-[#0f2747] mb-4 pb-2 border-b border-[#f1f4f8]">
           1. Karşılama Metinleri ve Butonlar
         </h3>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <div className="sm:col-span-2">
+        <div className="grid gap-5 sm:grid-cols-3">
+          <div className="sm:col-span-3">
             <label className="text-xs font-semibold text-[#50617d]">Rozet / Üst Başlık (Eyebrow)</label>
             <input
               value={form.eyebrow}
@@ -634,24 +634,44 @@ function HeroEditor({
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[#50617d]">Ana Başlık</label>
+            <label className="text-xs font-semibold text-[#50617d]">1. Başlık Başı</label>
             <input
               value={form.title}
               onChange={(e) => handleChange("title", e.target.value)}
+              placeholder="Örn: Almanya hayalinizi"
               className="mt-1.5 h-11 w-full rounded-xl border border-[#e1e7f0] px-3.5 text-sm outline-none focus:border-[#2f6bff]"
             />
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[#50617d]">Vurgulanacak Kelime (Renkli)</label>
+            <label className="text-xs font-semibold text-[#50617d]">2. Renkli Vurgu Kelimesi</label>
             <input
               value={form.highlight}
               onChange={(e) => handleChange("highlight", e.target.value)}
+              placeholder="Örn: güvenle"
+              className="mt-1.5 h-11 w-full rounded-xl border border-[#e1e7f0] px-3.5 text-sm font-semibold text-[#2f6bff] outline-none focus:border-[#2f6bff]"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-[#50617d]">3. Başlık Sonu (Kalan Metin)</label>
+            <input
+              value={form.titleSuffix !== undefined ? form.titleSuffix : "gerçeğe dönüştürün"}
+              onChange={(e) => handleChange("titleSuffix", e.target.value)}
+              placeholder="Örn: gerçeğe dönüştürün"
               className="mt-1.5 h-11 w-full rounded-xl border border-[#e1e7f0] px-3.5 text-sm outline-none focus:border-[#2f6bff]"
             />
           </div>
 
-          <div className="sm:col-span-2">
+          {/* Canlı Başlık Önizleme */}
+          <div className="sm:col-span-3 rounded-xl bg-[#f0f4ff] border border-[#d6e3ff] p-3 text-xs">
+            <span className="font-semibold text-[#2f6bff]">Başlık Önizlemesi: </span>
+            <span className="font-bold text-[#0f2747]">{form.title} </span>
+            <span className="font-bold text-[#2f6bff]">{form.highlight} </span>
+            <span className="font-bold text-[#0f2747]">{form.titleSuffix !== undefined ? form.titleSuffix : "gerçeğe dönüştürün"}</span>
+          </div>
+
+          <div className="sm:col-span-3">
             <label className="text-xs font-semibold text-[#50617d]">Açıklama Paragrafı</label>
             <textarea
               rows={3}

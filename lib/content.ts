@@ -30,6 +30,7 @@ export interface HeroContent {
   eyebrow: string
   title: string
   highlight: string
+  titleSuffix?: string
   description: string
   primaryCta: string
   primaryHref: string
@@ -117,6 +118,7 @@ export const defaultContent: AllContent = {
     eyebrow: "Yetkili ve güvenilir göç danışmanlığı",
     title: "Almanya hayalinizi",
     highlight: "güvenle",
+    titleSuffix: "gerçeğe dönüştürün",
     description: "Vize, oturum, iş ve aile birleşimi süreçlerinizi baştan sona uzman ekibimizle yönetiyoruz. Hayatınızın en önemli kararlarından birinde yanınızdayız.",
     primaryCta: "Ücretsiz ön görüşme",
     primaryHref: "#iletisim",

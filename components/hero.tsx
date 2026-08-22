@@ -9,7 +9,9 @@ function HeroCopy({ content }: { content: HeroContent }) {
         {content.eyebrow}
       </div>
       <h1 className="mt-6 text-balance text-4xl font-semibold leading-[1.05] tracking-tight text-navy sm:text-5xl xl:text-6xl">
-        {content.title} <span className="text-royal">{content.highlight}</span> gerçeğe dönüştürün
+        {content.title}{" "}
+        {content.highlight && <span className="text-royal">{content.highlight}</span>}{" "}
+        {content.titleSuffix !== undefined ? content.titleSuffix : "gerçeğe dönüştürün"}
       </h1>
       <p className="mx-auto mt-6 max-w-lg text-pretty text-lg leading-relaxed text-muted-foreground lg:mx-0">
         {content.description}
