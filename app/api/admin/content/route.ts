@@ -36,7 +36,8 @@ export async function POST(request: Request) {
     } catch {}
 
     return NextResponse.json({ ok: true, data: updated })
-  } catch {
-    return NextResponse.json({ ok: false, error: "İçerik kaydedilemedi." }, { status: 500 })
+  } catch (error: any) {
+    console.error("Save content error:", error)
+    return NextResponse.json({ ok: false, error: error?.message || "İçerik kaydedilemedi." }, { status: 500 })
   }
 }
