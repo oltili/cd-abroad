@@ -1,11 +1,48 @@
 import { NextResponse } from "next/server"
 import fs from "fs/promises"
 import path from "path"
+import os from "os"
 import { createClient } from "@/lib/supabase/server"
 import { contactFormLimiter, getClientIp } from "@/lib/rate-limit"
 import { sanitizeText, isValidEmail, isValidPhone } from "@/lib/security"
 
 const requestsFile = path.join(process.cwd(), "data", "requests.json")
+const tempRequestsFile = path.join(os.tmpdir(), "cdabroad_requests.json")
+
+const globalForRequests = global as unknown as { __REQUESTS__?: any[] }
+
+async function getStoredRequests(): Promise<any[]> {
+  if (globalForRequests.__REQUESTS__) {
+    return globalForRequests.__REQUESTS__
+  }
+  try {
+    const rawTemp = await fs.readFile(tempRequestsFile, "utf-8")
+    const list = JSON.parse(rawTemp)
+    globalForRequests.__REQUESTS__ = list
+    return list
+  } catch {}
+
+  try {
+    const raw = await fs.readFile(requestsFile, "utf-8")
+    const list = JSON.parse(raw)
+    globalForRequests.__REQUESTS__ = list
+    return list
+  } catch {
+    return []
+  }
+}
+
+async function saveStoredRequests(list: any[]) {
+  globalForRequests.__REQUESTS__ = list
+  try {
+    await fs.mkdir(path.dirname(requestsFile), { recursive: true })
+    await fs.writeFile(requestsFile, JSON.stringify(list, null, 2), "utf-8")
+  } catch {
+    try {
+      await fs.writeFile(tempRequestsFile, JSON.stringify(list, null, 2), "utf-8")
+    } catch {}
+  }
+}
 
 function validateAndSanitize(input: Record<string, unknown>) {
   // 1. Honeypot kontrolü (Bot tuzak alanı)
@@ -40,7 +77,7 @@ export async function POST(request: Request) {
   try {
     const clientIp = getClientIp(request)
 
-    // 1. Rate Limiting kontrolü (Aynı IP'den aşırı form gönderimini engelleme)
+    // 1. Rate Limiting kontrolü
     const rateCheck = contactFormLimiter.check(clientIp)
     if (!rateCheck.success) {
       const minutesLeft = Math.ceil(rateCheck.resetMs / (60 * 1000))
@@ -53,7 +90,6 @@ export async function POST(request: Request) {
     const body = await request.json()
     const result = validateAndSanitize(body)
 
-    // Bot tespiti durumunda sessizce başarı dönerek botları şaşırt
     if (result.isBot) {
       return NextResponse.json({ ok: true })
     }
@@ -64,14 +100,9 @@ export async function POST(request: Request) {
 
     const parsed = result.data
 
-    // 2. Yerel requests.json dosyasına kaydet
+    // 2. İstekleri kaydet
     try {
-      let list: any[] = []
-      try {
-        const raw = await fs.readFile(requestsFile, "utf-8")
-        list = JSON.parse(raw)
-      } catch {}
-
+      const list = await getStoredRequests()
       const newRequest = {
         id: Date.now(),
         ...parsed,
@@ -80,10 +111,9 @@ export async function POST(request: Request) {
         note: "",
       }
       list.unshift(newRequest)
-      await fs.mkdir(path.dirname(requestsFile), { recursive: true })
-      await fs.writeFile(requestsFile, JSON.stringify(list, null, 2), "utf-8")
+      await saveStoredRequests(list)
     } catch (err) {
-      console.error("Local request save error:", err)
+      console.error("Request save error:", err)
     }
 
     // 3. Varsa Supabase veritabanına kaydet
