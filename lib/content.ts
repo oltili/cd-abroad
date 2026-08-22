@@ -1,5 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
+import os from "os"
+import { createClient } from "@/lib/supabase/server"
 
 export type IconName = "briefcase" | "graduation" | "users" | "file-text" | "home" | "landmark"
 
@@ -42,6 +44,7 @@ export interface StatContent {
   value: string
   label: string
   active?: boolean
+  military_time?: string
 }
 
 export interface ServiceContent {
@@ -144,7 +147,7 @@ export const defaultContent: AllContent = {
   statistics: [
     { id: "1", value: "2.000+", label: "Başarılı başvuru", active: true },
     { id: "2", value: "%98", label: "Memnuniyet oranı", active: true },
-    { id: "3", military_time: undefined, value: "12+", label: "Yıllık deneyim", active: true },
+    { id: "3", value: "12+", label: "Yıllık deneyim", active: true },
     { id: "4", value: "24/7", label: "Kesintisiz destek", active: true },
   ],
   services: [
@@ -158,14 +161,14 @@ export const defaultContent: AllContent = {
   process: [
     { id: "1", step: "01", title: "Ücretsiz Ön Değerlendirme", description: "Durumunuzu dinliyor, hedeflerinize en uygun göç yolunu birlikte belirliyoruz.", active: true },
     { id: "2", step: "02", title: "Strateji ve Yol Haritası", description: "Size özel bir başvuru planı, evrak listesi ve zaman çizelgesi hazırlıyoruz.", active: true },
-    { id: "3", step: "03", title: "Evrak ve Başvuru Yönetimi", description: "Tüm belgeleri hazırlıyor, çeviri ve resmi başvuruları sizin adınıza yürütüyoruz.", active: true },
-    { id: "4", step: "04", title: "Onay ve Almanya'ya Geçiş", description: "Vize onayının ardından yerleşim, adres kaydı ve entegrasyonda da yanınızdayız.", active: true },
+    { id: "3", step: "03", title: "Evrak ve Başvuru Yönetimi", description: "Tüm belgelerinizi titizlikle inceliyor, konsolosluk standartlarına uygun hale getiriyoruz.", active: true },
+    { id: "4", step: "04", title: "Sonuç ve Almanya'ya Uyum", description: "Vize onayından sonra Almanya'daki ilk adımlarınızda da yanınızda olmaya devam ediyoruz.", active: true },
   ],
   why: [
-    { id: "1", icon: "Languages", title: "Türkçe ve Almanca destek", description: "Sürecin tamamında ana dilinizde iletişim kurabileceğiniz uzmanlarla çalışırsınız.", active: true },
-    { id: "2", icon: "CheckCircle2", title: "Şeffaf ve net fiyatlandırma", description: "Sürpriz maliyet yok. Baştan sona ne ödeyeceğinizi ve ne alacağınızı bilirsiniz.", active: true },
-    { id: "3", icon: "Clock", title: "Hızlı ve doğru süreç", description: "Eksiksiz hazırlanan başvurularla gereksiz gecikmelerin ve retlerin önüne geçiyoruz.", active: true },
-    { id: "4", icon: "HeartHandshake", title: "Taşınma sonrası destek", description: "Adres kaydı, sağlık sigortası ve entegrasyonda da yalnız kalmazsınız.", active: true },
+    { id: "1", icon: "shield", title: "Resmi ve Yetkili Danışmanlık", description: "Tüm süreçlerimiz Alman göç mevzuatına ve resmi prosedürlere tam uyumludur.", active: true },
+    { id: "2", icon: "award", title: "%98 Başarı Oranı", description: "Yüzlerce başarılı vize ve oturum başvurusuyla kanıtlanmış güvenilirlik.", active: true },
+    { id: "3", icon: "clock", title: "Hızlı ve Şeffaf Süreç", description: "Her aşamada bilgilendirme, net zaman çizelgeleri ve sıfır sürpriz maliyet.", active: true },
+    { id: "4", icon: "map-pin", title: "Almanya ve Türkiye Ofisleri", description: "Hem Türkiye'de hazırlık hem de Almanya'ya varışınızda yerinde destek.", active: true },
   ],
   faq: [
     { id: "1", question: "Sürece nasıl başlıyoruz?", answer: "İlk adım ücretsiz ön değerlendirme görüşmesidir. Durumunuzu dinliyor, hangi göç yolunun size uygun olduğunu belirliyor ve net bir yol haritası sunuyoruz.", active: true },
@@ -179,7 +182,7 @@ export const defaultContent: AllContent = {
     title: "Ücretsiz ön değerlendirme alın",
     description: "Formu doldurun, uzman danışmanlarımız 24 saat içinde size geri dönsün. Sürecinizi birlikte planlayalım.",
     phone: "+49 30 123 45 67",
-    email: "info@danismanlik.de",
+    email: "info@cdabroad.de",
     address: "Berlin, Almanya & İstanbul, Türkiye",
     whatsapp: "+49 170 123 45 67",
     workingHours: "Pzt - Cum, 09:00 - 18:00",
@@ -206,13 +209,56 @@ export const serviceSectionContent = {
   description: "İhtiyacınıza özel danışmanlık çözümleriyle süreçlerinizi kolay ve öngörülebilir hale getiriyoruz.",
 }
 
-const dataFilePath = path.join(process.cwd(), "data", "content.json")
+const primaryDataFilePath = path.join(process.cwd(), "data", "content.json")
+const tempFilePath = path.join(os.tmpdir(), "cdabroad_content.json")
+
+// Global in-memory cache for serverless environments
+const globalForContent = global as unknown as { __CDABROAD_CONTENT__?: AllContent }
+
+function isSupabaseLive(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  return !!url && !!key && !url.includes("placeholder")
+}
 
 export async function getAllContent(): Promise<AllContent> {
+  // 1. Check in-memory cache
+  if (globalForContent.__CDABROAD_CONTENT__) {
+    return globalForContent.__CDABROAD_CONTENT__
+  }
+
+  // 2. Check Supabase table if connected
+  if (isSupabaseLive()) {
+    try {
+      const supabase = await createClient()
+      const { data } = await supabase
+        .from("website_content")
+        .select("content")
+        .eq("id", 1)
+        .maybeSingle()
+
+      if (data && data.content) {
+        const merged: AllContent = {
+          hero: { ...defaultContent.hero, ...data.content.hero },
+          statistics: data.content.statistics || defaultContent.statistics,
+          services: data.content.services || defaultContent.services,
+          process: data.content.process || defaultContent.process,
+          why: data.content.why || defaultContent.why,
+          faq: data.content.faq || defaultContent.faq,
+          contact: { ...defaultContent.contact, ...data.content.contact },
+          settings: { ...defaultContent.settings, ...data.content.settings },
+        }
+        globalForContent.__CDABROAD_CONTENT__ = merged
+        return merged
+      }
+    } catch {}
+  }
+
+  // 3. Check /tmp filesystem (Vercel serverless cache)
   try {
-    const raw = await fs.readFile(dataFilePath, "utf-8")
-    const parsed = JSON.parse(raw)
-    return {
+    const rawTemp = await fs.readFile(tempFilePath, "utf-8")
+    const parsed = JSON.parse(rawTemp)
+    const merged: AllContent = {
       hero: { ...defaultContent.hero, ...parsed.hero },
       statistics: parsed.statistics || defaultContent.statistics,
       services: parsed.services || defaultContent.services,
@@ -222,9 +268,29 @@ export async function getAllContent(): Promise<AllContent> {
       contact: { ...defaultContent.contact, ...parsed.contact },
       settings: { ...defaultContent.settings, ...parsed.settings },
     }
-  } catch {
-    return defaultContent
-  }
+    globalForContent.__CDABROAD_CONTENT__ = merged
+    return merged
+  } catch {}
+
+  // 4. Check local data/content.json
+  try {
+    const raw = await fs.readFile(primaryDataFilePath, "utf-8")
+    const parsed = JSON.parse(raw)
+    const merged: AllContent = {
+      hero: { ...defaultContent.hero, ...parsed.hero },
+      statistics: parsed.statistics || defaultContent.statistics,
+      services: parsed.services || defaultContent.services,
+      process: parsed.process || defaultContent.process,
+      why: parsed.why || defaultContent.why,
+      faq: parsed.faq || defaultContent.faq,
+      contact: { ...defaultContent.contact, ...parsed.contact },
+      settings: { ...defaultContent.settings, ...parsed.settings },
+    }
+    globalForContent.__CDABROAD_CONTENT__ = merged
+    return merged
+  } catch {}
+
+  return defaultContent
 }
 
 export async function saveAllContent(content: Partial<AllContent>): Promise<AllContent> {
@@ -232,9 +298,37 @@ export async function saveAllContent(content: Partial<AllContent>): Promise<AllC
   const updated: AllContent = {
     ...current,
     ...content,
+    hero: content.hero ? { ...current.hero, ...content.hero } : current.hero,
+    contact: content.contact ? { ...current.contact, ...content.contact } : current.contact,
+    settings: content.settings ? { ...current.settings, ...content.settings } : current.settings,
   }
-  await fs.mkdir(path.dirname(dataFilePath), { recursive: true })
-  await fs.writeFile(dataFilePath, JSON.stringify(updated, null, 2), "utf-8")
+
+  // Update in-memory cache immediately
+  globalForContent.__CDABROAD_CONTENT__ = updated
+
+  // 1. Try saving to Supabase if connected
+  if (isSupabaseLive()) {
+    try {
+      const supabase = await createClient()
+      await supabase
+        .from("website_content")
+        .upsert({ id: 1, content: updated, updated_at: new Date().toISOString() })
+    } catch (e) {
+      console.warn("Supabase save warning:", e)
+    }
+  }
+
+  // 2. Try saving to local data directory (Localhost / VPS)
+  try {
+    await fs.mkdir(path.dirname(primaryDataFilePath), { recursive: true })
+    await fs.writeFile(primaryDataFilePath, JSON.stringify(updated, null, 2), "utf-8")
+  } catch (fsErr) {
+    // If running in Vercel read-only filesystem, fallback to /tmp
+    try {
+      await fs.writeFile(tempFilePath, JSON.stringify(updated, null, 2), "utf-8")
+    } catch {}
+  }
+
   return updated
 }
 
