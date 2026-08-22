@@ -4,8 +4,13 @@ import path from "path"
 import { cookies } from "next/headers"
 import { createClient } from "@/lib/supabase/server"
 
+import os from "os"
+
 const SECRET = process.env.ADMIN_SESSION_SECRET || "danismanlik-super-secret-key-2026-fallback"
 const adminConfigFile = path.join(process.cwd(), "data", "admin-config.json")
+const tempAdminConfigFile = path.join(os.tmpdir(), "cdabroad_admin_config.json")
+
+const globalForAuth = global as unknown as { __ADMIN_CONFIG__?: AdminConfig }
 
 interface AdminConfig {
   email: string
@@ -25,9 +30,24 @@ export function hashPassword(password: string, salt: string): string {
  * Kayıtlı admin kimlik bilgilerini getirir.
  */
 export async function getAdminConfig(): Promise<{ email: string; isConfigured: boolean; config: AdminConfig | null }> {
+  // 1. In-memory cache
+  if (globalForAuth.__ADMIN_CONFIG__) {
+    return { email: globalForAuth.__ADMIN_CONFIG__.email, isConfigured: true, config: globalForAuth.__ADMIN_CONFIG__ }
+  }
+
+  // 2. /tmp cache
+  try {
+    const rawTemp = await fs.readFile(tempAdminConfigFile, "utf-8")
+    const config: AdminConfig = JSON.parse(rawTemp)
+    globalForAuth.__ADMIN_CONFIG__ = config
+    return { email: config.email, isConfigured: true, config }
+  } catch {}
+
+  // 3. Local data directory
   try {
     const raw = await fs.readFile(adminConfigFile, "utf-8")
     const config: AdminConfig = JSON.parse(raw)
+    globalForAuth.__ADMIN_CONFIG__ = config
     return { email: config.email, isConfigured: true, config }
   } catch {
     const defaultEmail = process.env.ADMIN_EMAIL || "admin@cdabroad.com"
@@ -66,8 +86,16 @@ export async function updateAdminPassword(newPassword: string, newEmail?: string
     updatedAt: new Date().toISOString(),
   }
 
-  await fs.mkdir(path.dirname(adminConfigFile), { recursive: true })
-  await fs.writeFile(adminConfigFile, JSON.stringify(updatedConfig, null, 2), "utf-8")
+  globalForAuth.__ADMIN_CONFIG__ = updatedConfig
+
+  try {
+    await fs.mkdir(path.dirname(adminConfigFile), { recursive: true })
+    await fs.writeFile(adminConfigFile, JSON.stringify(updatedConfig, null, 2), "utf-8")
+  } catch {
+    try {
+      await fs.writeFile(tempAdminConfigFile, JSON.stringify(updatedConfig, null, 2), "utf-8")
+    } catch {}
+  }
 }
 
 /**
