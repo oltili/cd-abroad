@@ -1,0 +1,35 @@
+[
+  {
+    "id": 1,
+    "name": "Ayşe Yılmaz",
+    "phone": "+90 532 000 00 01",
+    "email": "ayse@example.com",
+    "service": "Aile Birleşimi",
+    "message": "Eşim Almanya'da yaşıyor. Başvuru süreci hakkında bilgi almak istiyorum.",
+    "date": "21 Haz 2026",
+    "status": "Yeni",
+    "note": ""
+  },
+  {
+    "id": 2,
+    "name": "Mehmet Kaya",
+    "phone": "+90 533 000 00 02",
+    "email": "mehmet@example.com",
+    "service": "İş ve Çalışma Vizesi",
+    "message": "Bir iş teklifim var, gerekli belgeleri öğrenebilir miyim?",
+    "date": "20 Haz 2026",
+    "status": "İletişime Geçildi",
+    "note": "İlk görüşme yapıldı, denklik belgeleri bekleniyor."
+  },
+  {
+    "id": 3,
+    "name": "Selin Demir",
+    "phone": "+90 534 000 00 03",
+    "email": "selin@example.com",
+    "service": "Öğrenci Vizesi",
+    "message": "Üniversite kabulüm geldi. Vize için ne zaman başlamalıyız?",
+    "date": "19 Haz 2026",
+    "status": "Tamamlandı",
+    "note": "Vize başvurusu onaylandı."
+  }
+]
