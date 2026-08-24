@@ -1,7 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
 import os from "os"
-import { createClient } from "@/lib/supabase/server"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
 export type IconName = "briefcase" | "graduation" | "users" | "file-text" | "home" | "landmark"
 
@@ -214,82 +214,61 @@ export const serviceSectionContent = {
 const primaryDataFilePath = path.join(process.cwd(), "data", "content.json")
 const tempFilePath = path.join(os.tmpdir(), "cdabroad_content.json")
 
-// Global in-memory cache for serverless environments
-const globalForContent = global as unknown as { __CDABROAD_CONTENT__?: AllContent }
-
-function isSupabaseLive(): boolean {
+function getDirectSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  return !!url && !!key && !url.includes("placeholder")
+  if (url && key && !url.includes("placeholder") && key.length > 20) {
+    return createSupabaseClient(url, key, {
+      auth: { persistSession: false },
+    })
+  }
+  return null
+}
+
+function mergeWithDefaults(parsed: any): AllContent {
+  return {
+    hero: { ...defaultContent.hero, ...(parsed.hero || {}) },
+    statistics: parsed.statistics || defaultContent.statistics,
+    services: parsed.services || defaultContent.services,
+    process: parsed.process || defaultContent.process,
+    why: parsed.why || defaultContent.why,
+    faq: parsed.faq || defaultContent.faq,
+    contact: { ...defaultContent.contact, ...(parsed.contact || {}) },
+    settings: { ...defaultContent.settings, ...(parsed.settings || {}) },
+  }
 }
 
 export async function getAllContent(): Promise<AllContent> {
-  // 1. Check in-memory cache
-  if (globalForContent.__CDABROAD_CONTENT__) {
-    return globalForContent.__CDABROAD_CONTENT__
-  }
-
-  // 2. Check Supabase table if connected
-  if (isSupabaseLive()) {
+  // 1. Supabase'den en güncel veriyi doğrudan çek
+  const supabase = getDirectSupabase()
+  if (supabase) {
     try {
-      const supabase = await createClient()
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("website_content")
         .select("content")
         .eq("id", 1)
         .maybeSingle()
 
-      if (data && data.content) {
-        const merged: AllContent = {
-          hero: { ...defaultContent.hero, ...data.content.hero },
-          statistics: data.content.statistics || defaultContent.statistics,
-          services: data.content.services || defaultContent.services,
-          process: data.content.process || defaultContent.process,
-          why: data.content.why || defaultContent.why,
-          faq: data.content.faq || defaultContent.faq,
-          contact: { ...defaultContent.contact, ...data.content.contact },
-          settings: { ...defaultContent.settings, ...data.content.settings },
-        }
-        globalForContent.__CDABROAD_CONTENT__ = merged
-        return merged
+      if (!error && data && data.content) {
+        return mergeWithDefaults(data.content)
       }
-    } catch {}
+    } catch (err) {
+      console.warn("Supabase content read error:", err)
+    }
   }
 
-  // 3. Check /tmp filesystem (Vercel serverless cache)
+  // 2. /tmp dosya sisteminden oku (Vercel serverless geçici depolama)
   try {
     const rawTemp = await fs.readFile(tempFilePath, "utf-8")
     const parsed = JSON.parse(rawTemp)
-    const merged: AllContent = {
-      hero: { ...defaultContent.hero, ...parsed.hero },
-      statistics: parsed.statistics || defaultContent.statistics,
-      services: parsed.services || defaultContent.services,
-      process: parsed.process || defaultContent.process,
-      why: parsed.why || defaultContent.why,
-      faq: parsed.faq || defaultContent.faq,
-      contact: { ...defaultContent.contact, ...parsed.contact },
-      settings: { ...defaultContent.settings, ...parsed.settings },
-    }
-    globalForContent.__CDABROAD_CONTENT__ = merged
-    return merged
+    return mergeWithDefaults(parsed)
   } catch {}
 
-  // 4. Check local data/content.json
+  // 3. Yerel data/content.json dosyasından oku
   try {
     const raw = await fs.readFile(primaryDataFilePath, "utf-8")
     const parsed = JSON.parse(raw)
-    const merged: AllContent = {
-      hero: { ...defaultContent.hero, ...parsed.hero },
-      statistics: parsed.statistics || defaultContent.statistics,
-      services: parsed.services || defaultContent.services,
-      process: parsed.process || defaultContent.process,
-      why: parsed.why || defaultContent.why,
-      faq: parsed.faq || defaultContent.faq,
-      contact: { ...defaultContent.contact, ...parsed.contact },
-      settings: { ...defaultContent.settings, ...parsed.settings },
-    }
-    globalForContent.__CDABROAD_CONTENT__ = merged
-    return merged
+    return mergeWithDefaults(parsed)
   } catch {}
 
   return defaultContent
@@ -305,27 +284,30 @@ export async function saveAllContent(content: Partial<AllContent>): Promise<AllC
     settings: content.settings ? { ...current.settings, ...content.settings } : current.settings,
   }
 
-  // Update in-memory cache immediately
-  globalForContent.__CDABROAD_CONTENT__ = updated
-
-  // 1. Try saving to Supabase if connected
-  if (isSupabaseLive()) {
+  // 1. Supabase bağlıysa veritabanına kaydet
+  const supabase = getDirectSupabase()
+  if (supabase) {
     try {
-      const supabase = await createClient()
-      await supabase
+      const { error } = await supabase
         .from("website_content")
         .upsert({ id: 1, content: updated, updated_at: new Date().toISOString() })
-    } catch (e) {
-      console.warn("Supabase save warning:", e)
+
+      if (error) {
+        console.error("Supabase upsert error:", error)
+        throw new Error(`Veritabanına kaydedilemedi: ${error.message}`)
+      }
+    } catch (err: any) {
+      console.error("Supabase save exception:", err)
+      throw err
     }
   }
 
-  // 2. Try saving to local data directory (Localhost / VPS)
+  // 2. Yerel dosya sistemine kaydet (Localhost / VPS)
   try {
     await fs.mkdir(path.dirname(primaryDataFilePath), { recursive: true })
     await fs.writeFile(primaryDataFilePath, JSON.stringify(updated, null, 2), "utf-8")
-  } catch (fsErr) {
-    // If running in Vercel read-only filesystem, fallback to /tmp
+  } catch {
+    // Vercel salt okunur ise /tmp dizinine yaz
     try {
       await fs.writeFile(tempFilePath, JSON.stringify(updated, null, 2), "utf-8")
     } catch {}

@@ -31,6 +31,7 @@ export async function POST(request: Request) {
     
     // Sayfaları anında önbellekten temizle ve yeniden derle
     try {
+      revalidatePath("/", "layout")
       revalidatePath("/")
       revalidatePath("/admin")
     } catch {}
